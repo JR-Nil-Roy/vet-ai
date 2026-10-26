@@ -1,0 +1,17 @@
+# torch ডিফল্টভাবে CUDA সহ নামে (~2 GB) — HF-এর ফ্রি টিয়ারে সেটা
+# বিল্ড ব্যর্থ করতে পারে। নিচের index থেকে CPU-only বিল্ড আসে (~200 MB),
+# আর আমাদের মডেল CPU-তেই চলে।
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+# গুরুত্বপূর্ণ: scikit-learn, numpy ও pandas-এর ভার্সন হুবহু মেলাতে হবে।
+# .pkl ফাইলগুলো এই ভার্সনগুলো দিয়েই তৈরি — অন্য ভার্সনে লোড করলে
+# ভুল ফল দিতে পারে বা একেবারেই লোড না-ও হতে পারে।
+scikit-learn==1.9.0
+numpy==2.5.2
+pandas==3.0.5
+joblib==1.5.3
+
+torch==2.13.0
+torchvision==0.28.0
+streamlit==1.61.1
+pillow==12.3.0
