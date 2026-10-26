@@ -35,15 +35,98 @@ st.set_page_config(
 )
 
 # ---------------------------------------------------------------
-# সামান্য CSS — বাকিটা .streamlit/config.toml-এর থিম সামলায়
+# স্টাইল — ভেটেরিনারি ক্লিনিকের চেহারা
 # ---------------------------------------------------------------
 st.markdown("""
 <style>
-.block-container { padding-top: 2rem; padding-bottom: 3rem; max-width: 46rem; }
-h1, h2, h3 { letter-spacing: -0.01em; }
-[data-testid="stMetricValue"] { font-size: 1.4rem; }
-/* ফোনে বোতাম আঙুলের জন্য যথেষ্ট বড় রাখা */
-.stButton button { min-height: 2.8rem; font-weight: 600; }
+:root {
+  --brand:#0d9488; --brand-dk:#0f766e; --brand-lt:#ccfbf1;
+  --warm:#f59e0b; --danger:#dc2626;
+  --ink:#0f172a; --muted:#64748b; --line:#e2e8f0; --surface:#ffffff;
+}
+.block-container { padding-top:1.2rem; padding-bottom:3rem; max-width:48rem; }
+
+/* ---------- হেডার ---------- */
+.vet-hero {
+  background:linear-gradient(135deg,#0f766e 0%,#0d9488 55%,#14b8a6 100%);
+  border-radius:20px; padding:26px 24px; color:#fff; margin-bottom:22px;
+  box-shadow:0 10px 30px rgba(13,148,136,.28); position:relative; overflow:hidden;
+}
+.vet-hero::after {
+  content:"🐾"; position:absolute; right:-10px; bottom:-26px;
+  font-size:7rem; opacity:.13; transform:rotate(-18deg);
+}
+.vet-hero h1 { margin:0; font-size:1.7rem; font-weight:800; letter-spacing:-.02em; color:#fff; }
+.vet-hero p  { margin:6px 0 0; opacity:.93; font-size:.95rem; }
+.vet-chips { margin-top:14px; display:flex; gap:7px; flex-wrap:wrap; }
+.vet-chip {
+  background:rgba(255,255,255,.18); border:1px solid rgba(255,255,255,.3);
+  padding:4px 11px; border-radius:999px; font-size:.78rem; font-weight:600;
+  backdrop-filter:blur(4px);
+}
+
+/* ---------- সেকশন শিরোনাম ---------- */
+.vet-sec {
+  display:flex; align-items:center; gap:9px; margin:26px 0 12px;
+  font-size:1.08rem; font-weight:700; color:var(--ink);
+}
+.vet-sec::after { content:""; flex:1; height:1px; background:var(--line); }
+
+/* ---------- রোগ নির্ণয়ের কার্ড (প্রেসক্রিপশন ঘরানা) ---------- */
+.rx {
+  background:var(--surface); border:1px solid var(--line); border-radius:16px;
+  overflow:hidden; box-shadow:0 2px 14px rgba(15,23,42,.07); margin-bottom:6px;
+}
+.rx-top {
+  background:linear-gradient(90deg,var(--brand-dk),var(--brand));
+  color:#fff; padding:9px 16px; font-size:.76rem; font-weight:700;
+  letter-spacing:.08em; text-transform:uppercase;
+  display:flex; justify-content:space-between; align-items:center;
+}
+.rx-body { padding:18px 16px; }
+.rx-name { font-size:1.35rem; font-weight:800; color:var(--brand-dk); line-height:1.3; margin:0; }
+.rx-meta { display:flex; gap:9px; flex-wrap:wrap; margin-top:12px; }
+.rx-stat {
+  background:#f1f5f9; border:1px solid var(--line); border-radius:10px;
+  padding:7px 13px; min-width:88px;
+}
+.rx-stat b { display:block; font-size:1.05rem; color:var(--ink); }
+.rx-stat span { font-size:.72rem; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+
+/* ---------- ওষুধের সারি ---------- */
+.med {
+  display:flex; gap:12px; align-items:flex-start;
+  background:var(--surface); border:1px solid var(--line);
+  border-left:4px solid var(--brand); border-radius:12px;
+  padding:13px 15px; margin-bottom:9px;
+  transition:box-shadow .15s ease;
+}
+.med:hover { box-shadow:0 3px 12px rgba(15,23,42,.08); }
+.med.supp   { border-left-color:#60a5fa; }
+.med.manage { border-left-color:#94a3b8; }
+.med-ico { font-size:1.25rem; line-height:1.3; }
+.med-nm  { font-weight:700; color:var(--ink); font-size:.97rem; }
+.med-ds  { color:var(--muted); font-size:.87rem; margin-top:3px; line-height:1.5; }
+.med-tag {
+  font-size:.68rem; font-weight:700; padding:2px 8px; border-radius:999px;
+  background:var(--brand-lt); color:var(--brand-dk); white-space:nowrap;
+}
+.med-tag.supp   { background:#dbeafe; color:#1d4ed8; }
+.med-tag.manage { background:#f1f5f9; color:#475569; }
+
+/* ---------- বোতাম ও আপলোডার ---------- */
+.stButton button { min-height:2.9rem; font-weight:700; border-radius:11px; }
+[data-testid="stFileUploaderDropzone"] {
+  border:2px dashed var(--brand); border-radius:14px; background:#f0fdfa;
+}
+[data-testid="stExpander"] { border-radius:13px; border:1px solid var(--line); }
+[data-testid="stImage"] img { border-radius:13px; border:1px solid var(--line); }
+
+/* ফোনে স্ট্যাট চিপ গুলো যেন ভেঙে না যায় */
+@media (max-width:640px){
+  .vet-hero h1{ font-size:1.4rem; }
+  .rx-stat{ flex:1 1 calc(50% - 9px); min-width:0; }
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -227,46 +310,91 @@ PET_DISEASE_CATEGORY = {
     "Parvovirus in Dog": "Digestive Issues", "Feline Panleukopenia": "Digestive Issues",
 }
 
-ROLE_COLOR = {"প্রধান": "🟢", "সহায়ক": "🔵", "ব্যবস্থাপনা": "⚪"}
+SPECIES_ICON = {
+    "cow": "🐄", "buffalo": "🐃", "goat": "🐐",
+    "sheep": "🐑", "dog": "🐕", "cat": "🐈",
+}
+# ওষুধের ভূমিকা অনুযায়ী আইকন, CSS ক্লাস ও ব্যাজের নাম
+ROLE_STYLE = {
+    "প্রধান":      ("💊", "",       "প্রধান চিকিৎসা"),
+    "সহায়ক":      ("🧴", "supp",   "সহায়ক"),
+    "ব্যবস্থাপনা": ("🏠", "manage", "ব্যবস্থাপনা"),
+}
 
 
 # ===============================================================
 # পুনঃব্যবহারযোগ্য UI অংশ
 # ===============================================================
+def section(icon, title):
+    st.markdown(f'<div class="vet-sec">{icon} {title}</div>', unsafe_allow_html=True)
+
+
+def rx_card(kicker, name, stats):
+    """প্রেসক্রিপশন-ঘরানার কার্ড। stats = [(লেবেল, মান), ...]"""
+    chips = "".join(
+        f'<div class="rx-stat"><b>{v}</b><span>{k}</span></div>' for k, v in stats
+    )
+    st.markdown(
+        f'<div class="rx">'
+        f'  <div class="rx-top"><span>{kicker}</span><span>Rx</span></div>'
+        f'  <div class="rx-body">'
+        f'    <p class="rx-name">{name}</p>'
+        f'    <div class="rx-meta">{chips}</div>'
+        f'  </div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+
 def show_medicines(meds, heading="এই রোগে সাধারণত যেসব ওষুধ ব্যবহার হয়"):
-    st.subheader(heading, divider="gray")
+    section("💊", heading)
     for m in meds:
-        with st.container(border=True):
-            st.markdown(
-                f"{ROLE_COLOR.get(m.get('role', 'সহায়ক'), '⚪')} **{m['name']}**  \n"
-                f"<span style='color:#9aa4b2; font-size:0.9rem;'>{m['purpose']}</span>",
-                unsafe_allow_html=True,
-            )
+        icon, cls, tag = ROLE_STYLE.get(m.get("role", "সহায়ক"), ROLE_STYLE["সহায়ক"])
+        st.markdown(
+            f'<div class="med {cls}">'
+            f'  <div class="med-ico">{icon}</div>'
+            f'  <div style="flex:1">'
+            f'    <div class="med-nm">{m["name"]}</div>'
+            f'    <div class="med-ds">{m["purpose"]}</div>'
+            f'  </div>'
+            f'  <span class="med-tag {cls}">{tag}</span>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
     st.caption(
-        "🟢 প্রধান চিকিৎসা · 🔵 সহায়ক · ⚪ ব্যবস্থাপনা — "
-        "**মাত্রা ইচ্ছাকৃতভাবে দেওয়া হয়নি**, কারণ সঠিক মাত্রা নির্ভর করে প্রাণীর ওজন, "
-        "বয়স, কিডনি-লিভারের অবস্থা ও গর্ভাবস্থার উপর। এই তালিকা ভেটের সাথে "
-        "আলোচনার জন্য, নিজে প্রয়োগের জন্য নয়।"
+        "⚠️ **মাত্রা (ডোজ) ইচ্ছাকৃতভাবে দেওয়া হয়নি** — সঠিক মাত্রা নির্ভর করে প্রাণীর ওজন, "
+        "বয়স, কিডনি-লিভারের অবস্থা ও গর্ভাবস্থার উপর, যা অ্যাপ জানে না। "
+        "এই তালিকা ভেটেরিনারিয়ানের সাথে আলোচনার জন্য, নিজে প্রয়োগের জন্য নয়।"
     )
 
 
 def show_urgent(title, message):
-    st.error(f"### 🚨 জরুরি — এখনই ব্যবস্থা নিন\n\n**{title}**\n\n{message}", icon="🚨")
+    st.error(f"### 🚨 জরুরি — এখনই ভেটের কাছে নিন\n\n**{title}**\n\n{message}", icon="🚨")
 
 
 def confidence_note(pct):
     if pct >= 85:
-        return "success", "মডেল এই ফলাফলে বেশ নিশ্চিত"
+        return "success", "✅ মডেল এই ফলাফলে বেশ নিশ্চিত"
     if pct >= 60:
-        return "info", "মোটামুটি নিশ্চিত — উপসর্গ দিয়ে যাচাই করে নিন"
-    return "warning", "কনফিডেন্স কম — নিচে উপসর্গ দিয়ে যাচাই করুন, বা ভেট দেখান"
+        return "info", "🔍 মোটামুটি নিশ্চিত — নিচে উপসর্গ দিয়ে যাচাই করে নিন"
+    return "warning", "⚠️ কনফিডেন্স কম — নিচে উপসর্গ দিয়ে যাচাই করুন, বা ভেট দেখান"
 
 
 # ===============================================================
 # হেডার
 # ===============================================================
-st.title("🐾 VetAI Nexus")
-st.caption("ছবি ও উপসর্গ মিলিয়ে প্রাণীর রোগ নির্ণয়ে প্রাথমিক সহায়তা")
+st.markdown(
+    '<div class="vet-hero">'
+    '  <h1>🩺 VetAI Nexus</h1>'
+    '  <p>ছবি ও উপসর্গ মিলিয়ে প্রাণীর রোগ নির্ণয়ে প্রাথমিক সহায়তা</p>'
+    '  <div class="vet-chips">'
+    f'    <span class="vet-chip">🐄 গরু/মহিষ · {COW_ACC:.0f}%</span>'
+    f'    <span class="vet-chip">🩺 উপসর্গ · {SYMPTOM_ACC:.0f}%</span>'
+    f'    <span class="vet-chip">🐕 কুকুর/বিড়াল · {PET_IMG_ACC:.0f}%</span>'
+    '  </div>'
+    '</div>',
+    unsafe_allow_html=True,
+)
 
 if "diagnosis" not in st.session_state:
     st.session_state.diagnosis = None
@@ -274,12 +402,14 @@ if "diagnosis" not in st.session_state:
 # ---------------------------------------------------------------
 # ধাপ ১ — প্রজাতি ও ছবি
 # ---------------------------------------------------------------
+section("🐾", "কোন প্রাণী?")
 animal = st.segmented_control(
     "প্রাণীর প্রজাতি",
     options=list(SPECIES),
-    format_func=lambda a: SPECIES[a],
+    format_func=lambda a: f"{SPECIES_ICON[a]} {SPECIES[a]}",
     default="cow",
     key="animal_pick",
+    label_visibility="collapsed",
 )
 if not animal:
     animal = "cow"
@@ -300,10 +430,12 @@ else:
 
 up_file = None
 if has_image_model:
+    section("📷", "আক্রান্ত অংশের ছবি দিন")
     up_file = st.file_uploader(
-        "আক্রান্ত অংশের ছবি দিন",
+        "ছবি আপলোড",
         type=["jpg", "jpeg", "png"],
         help="ফোনে ক্যামেরা দিয়ে সরাসরি তুলতে পারেন। আক্রান্ত জায়গা যেন স্পষ্ট দেখা যায়।",
+        label_visibility="collapsed",
     )
 
 # ---------------------------------------------------------------
@@ -356,13 +488,17 @@ if up_file:
         pet_disease, conf = preds[0]
         display, med_key = pet_disease, None
 
-    c1, c2 = st.columns([1, 1.3], vertical_alignment="center")
+    section("🔬", "ছবি থেকে সনাক্ত")
+    c1, c2 = st.columns([1, 1.25], vertical_alignment="top")
     with c1:
         st.image(img, use_container_width=True)
     with c2:
-        st.markdown("###### ছবি থেকে সনাক্ত")
-        st.markdown(f"### {display}")
-        st.metric("কনফিডেন্স", f"{conf:.1f}%", label_visibility="visible")
+        acc_now = COW_ACC if animal in {"cow", "buffalo"} else PET_IMG_ACC
+        rx_card(
+            f"{SPECIES_ICON[animal]} {SPECIES[animal]} · ছবি বিশ্লেষণ",
+            display,
+            [("কনফিডেন্স", f"{conf:.0f}%"), ("মডেল accuracy", f"{acc_now:.0f}%")],
+        )
 
     level, note = confidence_note(conf)
     getattr(st, level)(note)
@@ -406,7 +542,7 @@ if up_file:
             if meds:
                 show_medicines(meds)
             else:
-                st.subheader("যত্নের পরামর্শ", divider="gray")
+                section("🏠", "যত্নের পরামর্শ")
                 for tip in GENERIC_PET_CARE:
                     st.markdown(f"- {tip}")
                 st.caption(
@@ -459,7 +595,7 @@ if is_livestock and symptom_bundle:
 
     d = st.session_state.diagnosis
     if d:
-        st.subheader("উপসর্গ-ভিত্তিক ফলাফল", divider="gray")
+        section("🩺", "উপসর্গ-ভিত্তিক ফলাফল")
         for disease, p in sorted(d["proba"].items(), key=lambda x: -x[1]):
             label = ("LUMPY অথবা PNEUMONIA (উপসর্গে আলাদা করা যায় না)"
                      if disease == MERGED_CLASS else DISEASE_BN.get(disease, disease))
@@ -528,7 +664,7 @@ elif is_pet and text_bundle:
 
     d = st.session_state.diagnosis
     if d and "text" in d:
-        st.subheader("লেখা লক্ষণ থেকে বিশ্লেষণ", divider="gray")
+        section("✍️", "লেখা লক্ষণ থেকে বিশ্লেষণ")
         ranked = sorted(d["text"].items(), key=lambda x: -x[1])
         for cat, p in ranked[:3]:
             st.progress(min(float(p), 1.0), text=f"{cat} — {p*100:.1f}%")

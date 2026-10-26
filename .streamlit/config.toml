@@ -1,11 +1,11 @@
 [theme]
-# শান্ত, মেডিকেল-ঘরানার গাঢ় থিম — একটিমাত্র accent রঙ ব্যবহার করা হয়েছে,
-# যাতে সতর্কবার্তা (হলুদ) ও জরুরি বার্তা (লাল) আলাদাভাবে চোখে পড়ে
-base = "dark"
-primaryColor = "#14b8a6"
-backgroundColor = "#0e1117"
-secondaryBackgroundColor = "#1a1f29"
-textColor = "#e6edf3"
+# ভেটেরিনারি ক্লিনিকের অনুভূতি — পরিচ্ছন্ন সাদা পটভূমি, নিরাময়-সবুজ (teal)
+# accent। হালকা থিম মাঠে/রোদে ফোনে পড়তেও সুবিধা।
+base = "light"
+primaryColor = "#0d9488"
+backgroundColor = "#f7fafc"
+secondaryBackgroundColor = "#ffffff"
+textColor = "#0f172a"
 font = "sans serif"
 
 [server]
