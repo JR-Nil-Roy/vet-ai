@@ -1,0 +1,15 @@
+[theme]
+# শান্ত, মেডিকেল-ঘরানার গাঢ় থিম — একটিমাত্র accent রঙ ব্যবহার করা হয়েছে,
+# যাতে সতর্কবার্তা (হলুদ) ও জরুরি বার্তা (লাল) আলাদাভাবে চোখে পড়ে
+base = "dark"
+primaryColor = "#14b8a6"
+backgroundColor = "#0e1117"
+secondaryBackgroundColor = "#1a1f29"
+textColor = "#e6edf3"
+font = "sans serif"
+
+[server]
+maxUploadSize = 10
+
+[browser]
+gatherUsageStats = false
