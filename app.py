@@ -169,6 +169,7 @@ def load_pickle_model(path):
 
 cow_model, cow_classes = load_image_model("cow_disease_model.pth", "cow_disease_classes.json")
 pet_model, pet_classes = load_image_model("dog_cat_disease_model.pth", "dog_cat_disease_classes.json")
+goat_model, goat_classes = load_image_model("goat_health_model.pth", "goat_health_classes.json")
 symptom_bundle = load_pickle_model("livestock_symptom_model.pkl")
 text_bundle = load_pickle_model("pet_text_symptom_model.pkl")
 ppr_bundle = load_pickle_model("ppr_model.pkl")
@@ -190,8 +191,16 @@ def predict_ppr(signs, age_adult, is_goat, is_male):
     X = pd.DataFrame([row])[ppr_bundle["features"]]
     return float(ppr_bundle["model"].predict_proba(X)[0][1])
 
-COW_ACC = 94.9          # হোল্ড-আউট ভ্যালিডেশনে মাপা
+COW_ACC = 94.9          # হোল্ড-আউট ভ্যালিডেশনে মাপা (ফাঁস বাদ দিয়ে ৯৪.৬%)
 PET_IMG_ACC = 50.8      # Top-3: 70.4%
+GOAT_ACC = 96.4         # সুস্থ বনাম অসুস্থ — দুই শ্রেণির সহজ সমস্যা
+
+# ছাগলের ছবির মডেল শুধু "সুস্থ না অসুস্থ" বলে, নির্দিষ্ট রোগ নয় —
+# রোগ জানতে PPR যাচাই ও উপসর্গ অংশ ব্যবহার করতে হয়
+GOAT_CLASS_INFO = {
+    "healthy_goat":   "দেখে সুস্থ মনে হচ্ছে",
+    "unhealthy_goat": "অসুস্থতার লক্ষণ দেখা যাচ্ছে",
+}
 SYMPTOM_ACC = symptom_bundle["test_accuracy"] * 100 if symptom_bundle else 0
 TEXT_ACC = text_bundle["test_accuracy"] * 100 if text_bundle else 0
 
@@ -279,7 +288,37 @@ def predict_symptoms(animal, age, temp, s1, s2, s3):
     }
     X = pd.DataFrame([row])[symptom_bundle["feature_order"]]
     model = symptom_bundle["model"]
-    return dict(zip(model.classes_, model.predict_proba(X)[0]))
+    proba = dict(zip(model.classes_, model.predict_proba(X)[0]))
+
+    # ছাগল-ভেড়ায় Lumpy Skin Disease ও Blackleg বাস্তবে হয় না (Lumpy শুধু
+    # গরু-মহিষে, Blackleg মূলত গরুতে)। ট্রেনিং ডেটা থেকে ওই সারিগুলো বাদ
+    # দেওয়া হয়েছে, তবু বাড়তি সুরক্ষা হিসেবে এখানেও ছেঁকে নেওয়া হয়।
+    valid = set(symptom_bundle.get("valid_diseases", {}).get(animal, []))
+    if not valid:
+        return proba, None
+
+    def is_allowed(disease):
+        # যৌথ ক্লাসটি তখনই রাখা হয় যখন তার অন্তত একটি সদস্য ওই প্রজাতিতে হয়
+        if disease == MERGED_CLASS:
+            return bool(valid & {"lumpy virus", "pneumonia"})
+        return disease in valid
+
+    # বৈধ ক্লাস কমে গেলেও softmax একটা না একটা বেছে নিতে বাধ্য — তাই ছাগলে
+    # গুটির লক্ষণ দিলে আত্মবিশ্বাসের সাথে "FMD ৯৯%" বলে ফেলত। তাই দেখা হয়,
+    # এই উপসর্গ-সমন্বয়টা ওই প্রজাতিতে আদৌ কখনো দেখা গেছে কিনা।
+    combo = " + ".join(sorted([s1, s2, s3]))
+    known = set(symptom_bundle.get("known_combos", {}).get(animal, []))
+    unknown_combo = bool(known) and combo not in known
+
+    # সমন্বয়টা অন্য কোন প্রজাতিতে দেখা যায়, সেটা জানালে ব্যবহারকারী বুঝতে পারেন
+    seen_in = [a for a, cs in symptom_bundle.get("known_combos", {}).items()
+               if a != animal and combo in set(cs)]
+    rejected = (combo, seen_in) if unknown_combo else None
+
+    filtered = {d: p for d, p in proba.items() if is_allowed(d)}
+    total = sum(filtered.values())
+    norm = {d: p / total for d, p in filtered.items()} if total else proba
+    return norm, rejected
 
 
 def predict_text(description):
@@ -434,16 +473,27 @@ if not animal:
 
 is_livestock = animal in LIVESTOCK
 is_pet = animal in PETS
-has_image_model = (animal in {"cow", "buffalo"} and cow_model) or (is_pet and pet_model)
+is_goat_sheep = animal in {"goat", "sheep"}
+has_image_model = (
+    (animal in {"cow", "buffalo"} and cow_model)
+    or (is_pet and pet_model)
+    or (is_goat_sheep and goat_model)
+)
 
-if animal in {"goat", "sheep"}:
+if is_goat_sheep:
     st.info(
-        f"{SPECIES[animal]}-এর জন্য নিচে **PPR যাচাই** ও **সাধারণ উপসর্গ** — দুটোই ব্যবহার করুন।\n\n"
-        "⚠️ তবে জেনে রাখুন: এই মডেলগুলো PPR, Anthrax, Blackleg, FMD ও Pneumonia চেনে। "
+        f"{SPECIES[animal]}-এর জন্য তিনটা পথ আছে: **ছবি** (সুস্থ/অসুস্থ), "
+        "**PPR যাচাই**, আর **সাধারণ উপসর্গ**।\n\n"
+        "⚠️ তবে জেনে রাখুন: এই মডেলগুলো PPR, Anthrax ও FMD চেনে। "
         f"{SPECIES[animal]}-এর আরও কিছু গুরুত্বপূর্ণ রোগ — **Enterotoxaemia, CCPP, Orf, "
-        "গোদ (Liver fluke)** — এখনো যোগ করা হয়নি। লক্ষণ এই তালিকার সাথে না মিললে "
-        "ভেটেরিনারি ডাক্তার দেখান।",
+        "goatpox, গোদ (Liver fluke)** — এখনো যোগ করা হয়নি। লক্ষণ এই তালিকার সাথে "
+        "না মিললে ভেটেরিনারি ডাক্তার দেখান।",
         icon="ℹ️",
+    )
+    st.caption(
+        f"ছাগল/ভেড়ার ছবির মডেল শুধু **সুস্থ না অসুস্থ** বলতে পারে "
+        f"(accuracy **{GOAT_ACC:.1f}%**), নির্দিষ্ট রোগ নয় — সেটা জানতে নিচের "
+        "PPR ও উপসর্গ অংশ ব্যবহার করুন।"
     )
 else:
     acc = COW_ACC if animal in {"cow", "buffalo"} else PET_IMG_ACC
@@ -463,7 +513,8 @@ if has_image_model:
 # ছবি থেকে ফল — সাথে সাথেই রোগ ও ওষুধ
 # ---------------------------------------------------------------
 img_class = None          # গরুর ক্ষেত্রে lumpy / healthy / foot-and-mouth
-pet_disease = None
+pet_disease = None        # কুকুর/বিড়ালের ২২টি রোগের একটি
+goat_state = None         # ছাগল/ভেড়ার ক্ষেত্রে healthy_goat / unhealthy_goat
 
 if up_file:
     img = Image.open(up_file).convert("RGB")
@@ -504,6 +555,10 @@ if up_file:
         preds = predict_image(cow_model, cow_classes, img, topk=3)
         img_class, conf = preds[0]
         display, med_key = COW_CLASS_INFO.get(img_class, (img_class.upper(), "default_infection"))
+    elif is_goat_sheep:
+        preds = predict_image(goat_model, goat_classes, img, topk=2)
+        goat_state, conf = preds[0]
+        display, med_key = GOAT_CLASS_INFO.get(goat_state, goat_state), None
     else:
         preds = predict_image(pet_model, pet_classes, img, topk=3)
         pet_disease, conf = preds[0]
@@ -514,7 +569,8 @@ if up_file:
     with c1:
         st.image(img, use_container_width=True)
     with c2:
-        acc_now = COW_ACC if animal in {"cow", "buffalo"} else PET_IMG_ACC
+        acc_now = (COW_ACC if animal in {"cow", "buffalo"}
+                   else GOAT_ACC if is_goat_sheep else PET_IMG_ACC)
         rx_card(
             f"{SPECIES_ICON[animal]} {SPECIES[animal]} · ছবি বিশ্লেষণ",
             display,
@@ -549,6 +605,24 @@ if up_file:
             )
         else:
             show_medicines(LIVESTOCK_MEDICINES[med_key])
+
+    elif is_goat_sheep:
+        # ছবি শুধু সুস্থ/অসুস্থ বলে — কোন রোগ তা জানতে উপসর্গ লাগে
+        if goat_state == "healthy_goat":
+            st.success(
+                f"ছবিতে {SPECIES[animal]}টিকে দেখে সুস্থ মনে হচ্ছে।\n\n"
+                "তবে ছবি দিয়ে শুধু বাইরের অবস্থা বোঝা যায় — **জ্বর, পেটের অসুখ বা "
+                "ফুসফুসের সমস্যা ছবিতে ধরা পড়ে না**। সন্দেহ হলে নিচের PPR যাচাই ও "
+                "উপসর্গ অংশ ব্যবহার করুন।",
+                icon="✅",
+            )
+        else:
+            st.warning(
+                f"ছবিতে {SPECIES[animal]}টির মধ্যে **অসুস্থতার লক্ষণ** দেখা যাচ্ছে।\n\n"
+                "কিন্তু ছবি দিয়ে কোন রোগ তা বলা যায় না। **নিচের PPR যাচাই ও উপসর্গ "
+                "অংশ পূরণ করুন** — সেখানেই রোগ ও ওষুধ দেখানো হবে।",
+                icon="⚠️",
+            )
     else:
         if pet_disease in URGENT_PET_DISEASES:
             show_urgent(pet_disease, URGENT_PET_DISEASES[pet_disease])
@@ -656,16 +730,36 @@ if is_livestock and symptom_bundle:
                 resp_checked.append(sign["bn"])
 
         if st.button("উপসর্গ বিশ্লেষণ করুন", type="primary", use_container_width=True):
-            proba = predict_symptoms(animal, age, temp, s1, s2, s3)
+            proba, rejected = predict_symptoms(animal, age, temp, s1, s2, s3)
             top = max(proba, key=proba.get)
             st.session_state.diagnosis = {
-                "proba": proba, "top": top,
+                "proba": proba, "top": top, "rejected": rejected,
                 "resp_score": resp_score, "resp_checked": resp_checked,
             }
 
     d = st.session_state.diagnosis
     if d:
         section("🩺", "উপসর্গ-ভিত্তিক ফলাফল")
+
+        # লক্ষণ এই প্রজাতিতে হয় না এমন রোগের দিকে ইঙ্গিত করলে, জোর করে
+        # বাকি রোগগুলোর একটা বেছে না দিয়ে সেটা স্পষ্ট জানানো হয়
+        if d.get("rejected"):
+            _, seen_in = d["rejected"]
+            extra = ""
+            if seen_in:
+                others = ", ".join(SPECIES.get(a, a) for a in seen_in)
+                extra = (f"\n\nএই লক্ষণগুলো **{others}**-এ দেখা যায়, কিন্তু "
+                         f"{SPECIES[animal]}-এ নয়। Lumpy Skin Disease ও Blackleg "
+                         f"মূলত গরু-মহিষের রোগ।")
+            st.warning(
+                f"**এই লক্ষণগুলো {SPECIES[animal]}-এর চেনা কোনো রোগের সাথে মিলছে না।**"
+                f"{extra}\n\n"
+                f"তাই নিচের ফলাফল নির্ভরযোগ্য নয় — মডেল বাধ্য হয়ে একটা উত্তর বেছেছে। "
+                f"হয় লক্ষণ ভুল বাছাই হয়েছে, নয়তো এটি এমন রোগ যা এই মডেল এখনো চেনে না "
+                f"(goatpox, Enterotoxaemia, CCPP, Orf)। **ভেটেরিনারি ডাক্তার দেখান।**",
+                icon="⚠️",
+            )
+
         for disease, p in sorted(d["proba"].items(), key=lambda x: -x[1]):
             label = ("LUMPY অথবা PNEUMONIA (উপসর্গে আলাদা করা যায় না)"
                      if disease == MERGED_CLASS else DISEASE_BN.get(disease, disease))
