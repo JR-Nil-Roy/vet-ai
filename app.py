@@ -18,6 +18,7 @@ import torch.nn as nn
 from PIL import Image
 from torchvision import models, transforms
 
+from goat_diseases import GOAT_DISEASES, GOAT_SIGNS, differential
 from medicine_data import (
     GENERIC_PET_CARE,
     LIVESTOCK_MEDICINES,
@@ -705,6 +706,48 @@ if animal in {"goat", "sheep"} and ppr_bundle:
                 f"মনে রাখবেন, এই মডেল PPR আক্রান্তদের {PPR_RECALL:.0f}% ধরতে পারে — "
                 "অর্থাৎ ১০ জনে ১ জন ধরা নাও পড়তে পারে। লক্ষণ বাড়লে ভেট দেখান।"
             )
+
+# ---- ছাগল/ভেড়া: CCPP / Enterotoxaemia / Orf ----
+# এগুলোর কোনো উন্মুক্ত ডেটাসেট নেই, তাই ভুয়া ডেটায় মডেল না বানিয়ে
+# ভেটেরিনারি রেফারেন্স থেকে নেওয়া পার্থক্যকারী লক্ষণ ব্যবহার করা হয়।
+if is_goat_sheep:
+    with st.expander("🔎 অন্যান্য রোগ যাচাই (CCPP · Enterotoxaemia · Orf)", expanded=False):
+        st.caption(
+            "⚠️ এটি **ট্রেইনড মডেল নয়** — ভেটেরিনারি রেফারেন্স (WOAH, Iowa State CFSPH) "
+            "থেকে নেওয়া লক্ষণের চেকলিস্ট। তাই এর কোনো মাপা accuracy নেই; এটি শুধু "
+            "সম্ভাবনার দিকে ইঙ্গিত করে।"
+        )
+        gchecked = {}
+        gc = st.columns(2)
+        for i, (k, label) in enumerate(GOAT_SIGNS.items()):
+            gchecked[k] = gc[i % 2].checkbox(label, key=f"goat_{k}")
+
+        if st.button("রোগ যাচাই করুন", type="primary", use_container_width=True,
+                     key="goat_dx_btn"):
+            st.session_state.goat_dx = differential(gchecked)
+
+    if st.session_state.get("goat_dx"):
+        hits = [(k, s, t) for k, s, t in st.session_state.goat_dx if s >= t]
+        section("🔎", "অন্যান্য রোগের যাচাই")
+        if not hits:
+            top_k, top_s, top_t = st.session_state.goat_dx[0]
+            st.info(
+                f"টিক দেওয়া লক্ষণে CCPP, Enterotoxaemia বা Orf-এর স্পষ্ট ইঙ্গিত নেই "
+                f"(সর্বোচ্চ স্কোর {top_s}, সীমা {top_t})। উপরের PPR যাচাই ও নিচের "
+                "সাধারণ উপসর্গ অংশও দেখুন।",
+                icon="ℹ️",
+            )
+        for k, s, t in hits:
+            d = GOAT_DISEASES[k]
+            box = st.error if d["urgent"] else st.warning
+            zoo = ("\n\n🧍 **এই রোগ মানুষেও ছড়ায়** — গ্লাভস পরে হাত দিন।"
+                   if d["zoonotic"] else "")
+            box(
+                f"### {d['name']}\n\n*{d['full']}* · লক্ষণ-স্কোর {s} (সীমা {t})\n\n"
+                f"{d['note']}{zoo}",
+                icon="🚨" if d["urgent"] else "⚠️",
+            )
+            show_medicines(d["action"], heading=f"{d['name']} — করণীয়")
 
 if is_livestock and symptom_bundle:
     expanded = animal in {"goat", "sheep"} or not up_file
