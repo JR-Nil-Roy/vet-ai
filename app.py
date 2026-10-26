@@ -171,6 +171,24 @@ cow_model, cow_classes = load_image_model("cow_disease_model.pth", "cow_disease_
 pet_model, pet_classes = load_image_model("dog_cat_disease_model.pth", "dog_cat_disease_classes.json")
 symptom_bundle = load_pickle_model("livestock_symptom_model.pkl")
 text_bundle = load_pickle_model("pet_text_symptom_model.pkl")
+ppr_bundle = load_pickle_model("ppr_model.pkl")
+
+# PPR (ছাগলের প্লেগ) — বাংলাদেশে ছাগলের সবচেয়ে বড় ঘাতক, কিন্তু সাধারণ
+# উপসর্গ-ডেটাসেটে এই রোগটাই নেই। তাই আলাদা ক্লিনিক্যাল ডেটা থেকে মডেল।
+PPR_ACC = ppr_bundle["accuracy_at_threshold"] * 100 if ppr_bundle else 0
+PPR_RECALL = ppr_bundle.get("recall_at_threshold", 0.9) * 100 if ppr_bundle else 0
+PPR_THRESHOLD = ppr_bundle.get("threshold", 0.35) if ppr_bundle else 0.35
+
+
+def predict_ppr(signs, age_adult, is_goat, is_male):
+    """signs = {লক্ষণের key: True/False}. রিটার্ন: PPR-এর সম্ভাবনা (0-1)।"""
+    import pandas as pd
+    row = {f: int(signs.get(f, False)) for f in ppr_bundle["features"]}
+    row["age"] = int(age_adult)
+    row["animal"] = int(is_goat)
+    row["sex"] = int(is_male)
+    X = pd.DataFrame([row])[ppr_bundle["features"]]
+    return float(ppr_bundle["model"].predict_proba(X)[0][1])
 
 COW_ACC = 94.9          # হোল্ড-আউট ভ্যালিডেশনে মাপা
 PET_IMG_ACC = 50.8      # Top-3: 70.4%
@@ -420,8 +438,11 @@ has_image_model = (animal in {"cow", "buffalo"} and cow_model) or (is_pet and pe
 
 if animal in {"goat", "sheep"}:
     st.info(
-        f"{SPECIES[animal]}-এর জন্য এখনো ছবির মডেল নেই। নিচে **উপসর্গ দিয়ে যাচাই** "
-        "অংশটা খুলে লক্ষণ বাছাই করুন — সেখানেই রোগ ও ওষুধ দেখানো হবে।",
+        f"{SPECIES[animal]}-এর জন্য নিচে **PPR যাচাই** ও **সাধারণ উপসর্গ** — দুটোই ব্যবহার করুন।\n\n"
+        "⚠️ তবে জেনে রাখুন: এই মডেলগুলো PPR, Anthrax, Blackleg, FMD ও Pneumonia চেনে। "
+        f"{SPECIES[animal]}-এর আরও কিছু গুরুত্বপূর্ণ রোগ — **Enterotoxaemia, CCPP, Orf, "
+        "গোদ (Liver fluke)** — এখনো যোগ করা হয়নি। লক্ষণ এই তালিকার সাথে না মিললে "
+        "ভেটেরিনারি ডাক্তার দেখান।",
         icon="ℹ️",
     )
 else:
@@ -561,6 +582,55 @@ if up_file:
 # ঐচ্ছিক — উপসর্গ দিয়ে যাচাই
 # ---------------------------------------------------------------
 st.divider()
+
+# ---- ছাগল/ভেড়া: PPR যাচাই ----
+# PPR-এর লক্ষণ সাধারণ উপসর্গ-মডেলের তালিকায় নেই, তাই আলাদা করে নেওয়া হয়
+if animal in {"goat", "sheep"} and ppr_bundle:
+    with st.expander("🐐 PPR (ছাগলের প্লেগ) যাচাই করুন", expanded=True):
+        st.caption(
+            f"PPR বাংলাদেশে ছাগলের সবচেয়ে বড় ঘাতক। এই মডেল **আসল ক্লিনিক্যাল ডেটা** "
+            f"(২১,১৯৯ রেকর্ড) থেকে তৈরি — accuracy **{PPR_ACC:.0f}%**, "
+            f"এবং PPR আক্রান্তদের **{PPR_RECALL:.0f}%** ধরতে পারে।"
+        )
+        signs = {}
+        pc = st.columns(2)
+        for i, (key, label) in enumerate(ppr_bundle["sign_labels"].items()):
+            signs[key] = pc[i % 2].checkbox(label, key=f"ppr_{key}")
+
+        c1, c2 = st.columns(2)
+        age_adult = c1.radio("বয়স", ["বাচ্চা", "প্রাপ্তবয়স্ক"], horizontal=True, key="ppr_age") == "প্রাপ্তবয়স্ক"
+        is_male = c2.radio("লিঙ্গ", ["মাদী", "পুরুষ"], horizontal=True, key="ppr_sex") == "পুরুষ"
+
+        if st.button("PPR যাচাই করুন", type="primary", use_container_width=True):
+            st.session_state.ppr = predict_ppr(signs, age_adult, animal == "goat", is_male)
+
+    if st.session_state.get("ppr") is not None:
+        p = st.session_state.ppr
+        section("🐐", "PPR যাচাইয়ের ফল")
+        st.progress(min(p, 1.0), text=f"PPR-এর সম্ভাবনা — {p*100:.0f}%")
+        if p >= PPR_THRESHOLD:
+            st.error(
+                f"### ⚠️ PPR-এর সম্ভাবনা আছে ({p*100:.0f}%)\n\n"
+                "PPR অত্যন্ত সংক্রামক — একটি আক্রান্ত ছাগল থেকে পুরো পাল আক্রান্ত হতে পারে, "
+                "আর মৃত্যুহার ৫০-৮০% পর্যন্ত।\n\n"
+                "**এখনই যা করবেন:**\n"
+                "- আক্রান্ত প্রাণীকে সাথে সাথে আলাদা করুন\n"
+                "- নিকটস্থ ভেটেরিনারি ডাক্তার বা প্রাণিসম্পদ অফিসে জানান\n"
+                "- বাকি সুস্থ ছাগল-ভেড়াকে টিকা দেওয়ার ব্যবস্থা করুন\n"
+                "- PPR-এর নিজস্ব ওষুধ নেই; অ্যান্টিবায়োটিক শুধু সেকেন্ডারি সংক্রমণ ঠেকায়, "
+                "সাথে পানিশূন্যতা রোধে স্যালাইন দিতে হয়",
+                icon="⚠️",
+            )
+        else:
+            st.success(
+                f"এই লক্ষণগুলোতে PPR-এর সম্ভাবনা কম ({p*100:.0f}%)। "
+                "তবে নিচে সাধারণ উপসর্গ দিয়েও যাচাই করে নিন।",
+                icon="✅",
+            )
+            st.caption(
+                f"মনে রাখবেন, এই মডেল PPR আক্রান্তদের {PPR_RECALL:.0f}% ধরতে পারে — "
+                "অর্থাৎ ১০ জনে ১ জন ধরা নাও পড়তে পারে। লক্ষণ বাড়লে ভেট দেখান।"
+            )
 
 if is_livestock and symptom_bundle:
     expanded = animal in {"goat", "sheep"} or not up_file
