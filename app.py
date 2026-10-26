@@ -19,6 +19,13 @@ from PIL import Image
 from torchvision import models, transforms
 
 from goat_diseases import GOAT_DISEASES, GOAT_SIGNS, differential
+from mastitis import (
+    CLINICAL_SIGNS as MAST_SIGNS,
+    CMT_SCORES,
+    MASTITIS_TREATMENT,
+    MILK_WITHHOLD,
+    assess as assess_mastitis,
+)
 from medicine_data import (
     GENERIC_PET_CARE,
     LIVESTOCK_MEDICINES,
@@ -171,6 +178,10 @@ def load_pickle_model(path):
 cow_model, cow_classes = load_image_model("cow_disease_model.pth", "cow_disease_classes.json")
 pet_model, pet_classes = load_image_model("dog_cat_disease_model.pth", "dog_cat_disease_classes.json")
 goat_model, goat_classes = load_image_model("goat_health_model.pth", "goat_health_classes.json")
+# কুকুরের চর্মরোগের জন্য আলাদা মডেল — ২২-ক্লাস মডেলের চেয়ে অনেক নির্ভুল
+# (৯৩.৩% বনাম ৫০.৮%), কারণ কম ক্লাসে অনেক বেশি ছবি। শুধু কুকুরের ডেটায়
+# ট্রেইন করা, তাই বিড়ালে ব্যবহার করা হয় না।
+skin_model, skin_classes = load_image_model("dog_skin_model.pth", "dog_skin_classes.json")
 symptom_bundle = load_pickle_model("livestock_symptom_model.pkl")
 text_bundle = load_pickle_model("pet_text_symptom_model.pkl")
 ppr_bundle = load_pickle_model("ppr_model.pkl")
@@ -195,6 +206,21 @@ def predict_ppr(signs, age_adult, is_goat, is_male):
 COW_ACC = 94.9          # হোল্ড-আউট ভ্যালিডেশনে মাপা (ফাঁস বাদ দিয়ে ৯৪.৬%)
 PET_IMG_ACC = 50.8      # Top-3: 70.4%
 GOAT_ACC = 96.4         # সুস্থ বনাম অসুস্থ — দুই শ্রেণির সহজ সমস্যা
+DOG_SKIN_ACC = 93.3     # ৭ চর্মরোগ, ৪,৬৬৬ ছবি (Top-3: ৯৯.৩%)
+
+# চর্মরোগ মডেলের ক্লাসের বাংলা নাম ও medicine_data-র সাথে ম্যাপিং
+SKIN_CLASS_INFO = {
+    "ringworm":             ("RINGWORM (দাদ)", "Ringworm in Cat"),
+    "demodicosis":          ("DEMODECTIC MANGE (খোস-পাঁচড়া)", "Mange in Dog"),
+    "dermatitis":           ("DERMATITIS (চর্মপ্রদাহ)", "Hot Spots in Dog"),
+    "fungal_infection":     ("FUNGAL INFECTION (ছত্রাক)", "Fungal Infection in Dog"),
+    "hypersensitivity":     ("ALLERGIC DERMATOSIS (অ্যালার্জি)", "Skin Allergy in Dog"),
+    "bacterial_dermatosis": ("BACTERIAL DERMATOSIS (ব্যাকটেরিয়াল)", "Hot Spots in Dog"),
+    "healthy":              ("ত্বকে কোনো রোগ পাওয়া যায়নি", None),
+}
+# এই ক্লাসে মাত্র ৯৬টি ছবি ছিল — precision ০.৩৩, অর্থাৎ মডেল যখন এটা বলে
+# তিনবারে দুইবার ভুল হয়। তাই আলাদা সতর্কতা দেখানো হয়।
+SKIN_LOW_TRUST = {"bacterial_dermatosis"}
 
 # ছাগলের ছবির মডেল শুধু "সুস্থ না অসুস্থ" বলে, নির্দিষ্ট রোগ নয় —
 # রোগ জানতে PPR যাচাই ও উপসর্গ অংশ ব্যবহার করতে হয়
@@ -503,12 +529,28 @@ else:
 up_file = None
 if has_image_model:
     section("📷", "আক্রান্ত অংশের ছবি দিন")
-    up_file = st.file_uploader(
-        "ছবি আপলোড",
-        type=["jpg", "jpeg", "png"],
-        help="ফোনে ক্যামেরা দিয়ে সরাসরি তুলতে পারেন। আক্রান্ত জায়গা যেন স্পষ্ট দেখা যায়।",
+    # মাঠে দাঁড়িয়ে গ্যালারিতে খোঁজার বদলে সরাসরি ক্যামেরা খোলা অনেক সুবিধাজনক,
+    # তাই দুটো পথই রাখা হয়েছে
+    mode = st.radio(
+        "ছবি দেওয়ার উপায়",
+        ["📁 গ্যালারি থেকে", "📸 এখনই তুলুন"],
+        horizontal=True,
         label_visibility="collapsed",
+        key="img_mode",
     )
+    if mode == "📸 এখনই তুলুন":
+        st.caption(
+            "ফোনের ক্যামেরা খুলবে। আক্রান্ত জায়গা যেন স্পষ্ট ও কাছ থেকে আসে। "
+            "অন্ধকার হলে **ফ্ল্যাশলাইট** জ্বালিয়ে নিন — মুখের ভেতরের ঘা দেখতে বিশেষ কাজে লাগে।"
+        )
+        up_file = st.camera_input("ছবি তুলুন", label_visibility="collapsed")
+    else:
+        up_file = st.file_uploader(
+            "ছবি আপলোড",
+            type=["jpg", "jpeg", "png"],
+            help="আক্রান্ত জায়গা যেন স্পষ্ট দেখা যায়।",
+            label_visibility="collapsed",
+        )
 
 # ---------------------------------------------------------------
 # ছবি থেকে ফল — সাথে সাথেই রোগ ও ওষুধ
@@ -516,6 +558,8 @@ if has_image_model:
 img_class = None          # গরুর ক্ষেত্রে lumpy / healthy / foot-and-mouth
 pet_disease = None        # কুকুর/বিড়ালের ২২টি রোগের একটি
 goat_state = None         # ছাগল/ভেড়ার ক্ষেত্রে healthy_goat / unhealthy_goat
+skin_class = None         # কুকুরের চর্মরোগ মডেলের ফল
+pet_preds = None          # কুকুরে ২২-ক্লাস মডেলের সহায়ক ফল
 
 if up_file:
     img = Image.open(up_file).convert("RGB")
@@ -560,6 +604,16 @@ if up_file:
         preds = predict_image(goat_model, goat_classes, img, topk=2)
         goat_state, conf = preds[0]
         display, med_key = GOAT_CLASS_INFO.get(goat_state, goat_state), None
+    elif animal == "dog" and skin_model:
+        # কুকুরে চর্মরোগ মডেলই প্রধান (৯৩.৩%), কারণ ২২-ক্লাস মডেল মাত্র ৫০.৮%
+        preds = predict_image(skin_model, skin_classes, img, topk=3)
+        skin_class, conf = preds[0]
+        display, _ = SKIN_CLASS_INFO.get(skin_class, (skin_class, None))
+        med_key = None
+        # ২২-ক্লাস মডেলটাও চালানো হয় — চর্মরোগের বাইরের সমস্যা (কানের মাইট,
+        # কৃমি, দাঁত) ওটাই ধরতে পারে
+        pet_preds = predict_image(pet_model, pet_classes, img, topk=3)
+        pet_disease = pet_preds[0][0]
     else:
         preds = predict_image(pet_model, pet_classes, img, topk=3)
         pet_disease, conf = preds[0]
@@ -571,7 +625,8 @@ if up_file:
         st.image(img, use_container_width=True)
     with c2:
         acc_now = (COW_ACC if animal in {"cow", "buffalo"}
-                   else GOAT_ACC if is_goat_sheep else PET_IMG_ACC)
+                   else GOAT_ACC if is_goat_sheep
+                   else DOG_SKIN_ACC if skin_class else PET_IMG_ACC)
         rx_card(
             f"{SPECIES_ICON[animal]} {SPECIES[animal]} · ছবি বিশ্লেষণ",
             display,
@@ -585,9 +640,18 @@ if up_file:
     if len(preds) > 1 and conf < 90:
         with st.expander("অন্যান্য সম্ভাবনা দেখুন"):
             for name, p in preds[1:]:
-                label = COW_CLASS_INFO.get(name, (name, None))[0] if animal in {"cow", "buffalo"} else name
+                label = (COW_CLASS_INFO.get(name, (name, None))[0]
+                         if animal in {"cow", "buffalo"}
+                         else SKIN_CLASS_INFO.get(name, (name, None))[0] if skin_class
+                         else GOAT_CLASS_INFO.get(name, name) if is_goat_sheep
+                         else name)
                 st.progress(min(p / 100, 1.0), text=f"{label} — {p:.1f}%")
-            if is_pet:
+            if skin_class:
+                st.caption(
+                    f"চর্মরোগ মডেলের Top-1 accuracy **{DOG_SKIN_ACC:.1f}%**, Top-3 **৯৯.৩%** — "
+                    "অর্থাৎ সঠিক রোগটি এই তালিকায় থাকার সম্ভাবনা প্রায় নিশ্চিত।"
+                )
+            elif is_pet:
                 st.caption(
                     f"এই মডেলের Top-1 accuracy {PET_IMG_ACC:.1f}%, কিন্তু Top-3 **৭০.৪%** — "
                     "অর্থাৎ সঠিক রোগটি এই তিনটির মধ্যে থাকার সম্ভাবনা অনেক বেশি।"
@@ -624,6 +688,48 @@ if up_file:
                 "অংশ পূরণ করুন** — সেখানেই রোগ ও ওষুধ দেখানো হবে।",
                 icon="⚠️",
             )
+    elif skin_class:
+        # ---- কুকুরের চর্মরোগ (প্রধান মডেল) ----
+        if skin_class == "healthy":
+            st.success(
+                "ছবিতে ত্বকের কোনো রোগ ধরা পড়েনি।\n\n"
+                "তবে **বমি, ডায়রিয়া, কাশি বা কৃমির মতো সমস্যা ছবিতে দেখা যায় না**। "
+                "অন্য লক্ষণ থাকলে নিচে লিখে যাচাই করুন।",
+                icon="✅",
+            )
+        else:
+            if skin_class in SKIN_LOW_TRUST:
+                st.warning(
+                    "এই রোগের ক্লাসে ট্রেনিং ছবি ছিল খুব কম (৯৬টি), তাই মডেল যখন এটা "
+                    "বলে তখন **তিনবারে প্রায় দুইবার ভুল হয়**। নিচের অন্যান্য সম্ভাবনাও "
+                    "দেখুন এবং ভেটেরিনারি ডাক্তারকে দেখান।",
+                    icon="⚠️",
+                )
+            _, med_name = SKIN_CLASS_INFO.get(skin_class, (None, None))
+            if med_name and med_name in ZOONOTIC_PET_DISEASES:
+                st.warning(
+                    "এই রোগটি **মানুষের মধ্যেও ছড়াতে পারে**। প্রাণী ধরার পর সাবান দিয়ে "
+                    "হাত ধুয়ে নিন এবং শিশুদের দূরে রাখুন।",
+                    icon="⚠️",
+                )
+            meds = PET_MEDICINES.get(med_name)
+            if meds:
+                show_medicines(meds)
+
+        # ---- ২২-ক্লাস মডেলের সহায়ক মত ----
+        # চর্মরোগের বাইরের সমস্যা (কানের মাইট, কৃমি, দাঁত) এটাই ধরতে পারে
+        if pet_preds:
+            with st.expander("🔍 বিস্তৃত বিশ্লেষণ (চর্মরোগের বাইরেও)", expanded=False):
+                st.caption(
+                    f"এই মডেল ২২টি রোগ চেনে — কানের মাইট, কৃমি, দাঁতের সমস্যাও এর মধ্যে। "
+                    f"তবে এর accuracy মাত্র **{PET_IMG_ACC:.1f}%**, উপরের চর্মরোগ মডেলের "
+                    f"**{DOG_SKIN_ACC:.1f}%**-এর তুলনায় অনেক কম। তাই চামড়ার সমস্যা হলে "
+                    "উপরের ফলটাই বেশি নির্ভরযোগ্য।"
+                )
+                for name, p in pet_preds:
+                    st.progress(min(p / 100, 1.0), text=f"{name} — {p:.1f}%")
+                if pet_preds[0][0] in URGENT_PET_DISEASES:
+                    show_urgent(pet_preds[0][0], URGENT_PET_DISEASES[pet_preds[0][0]])
     else:
         if pet_disease in URGENT_PET_DISEASES:
             show_urgent(pet_disease, URGENT_PET_DISEASES[pet_disease])
@@ -706,6 +812,50 @@ if animal in {"goat", "sheep"} and ppr_bundle:
                 f"মনে রাখবেন, এই মডেল PPR আক্রান্তদের {PPR_RECALL:.0f}% ধরতে পারে — "
                 "অর্থাৎ ১০ জনে ১ জন ধরা নাও পড়তে পারে। লক্ষণ বাড়লে ভেট দেখান।"
             )
+
+# ---- গরু/মহিষ: ম্যাস্টাইটিস (ওলান প্রদাহ) ----
+# ছবিতে ওলানের রোগ ধরার মডেল নেই, আর যে ডেটাসেট পাওয়া গেছে তা সিনথেটিক
+# (ব্যাখ্যা mastitis.py-তে)। তাই প্রতিষ্ঠিত CMT মানদণ্ড ব্যবহার করা হয়েছে।
+if animal in {"cow", "buffalo"}:
+    with st.expander("🥛 ম্যাস্টাইটিস (ওলান প্রদাহ) যাচাই", expanded=False):
+        st.caption(
+            "দুগ্ধখামারের সবচেয়ে বড় ক্ষতির কারণ। **Subclinical ম্যাস্টাইটিসে গরু "
+            "দেখতে সুস্থ থাকে**, শুধু দুধ কমে যায় আর দোহনের সময় অন্য গরুতে ছড়ায় — "
+            "তাই CMT পরীক্ষা ছাড়া ধরা পড়ে না।"
+        )
+        st.markdown("**CMT (California Mastitis Test) করে থাকলে ফলাফল দিন**")
+        cmt_opts = ["পরীক্ষা করিনি"] + list(CMT_SCORES)
+        cmt = st.selectbox(
+            "CMT ফল", cmt_opts,
+            format_func=lambda k: "পরীক্ষা করিনি" if k == "পরীক্ষা করিনি" else CMT_SCORES[k]["label"],
+            key="cmt_pick", label_visibility="collapsed",
+        )
+        if cmt != "পরীক্ষা করিনি":
+            st.caption(f"আনুমানিক সোমাটিক সেল কাউন্ট: **{CMT_SCORES[cmt]['scc']}** /ml")
+
+        st.markdown("**যে লক্ষণগুলো দেখছেন টিক দিন**")
+        mast_checked = {}
+        mc = st.columns(2)
+        for i, (k, (label, _)) in enumerate(MAST_SIGNS.items()):
+            mast_checked[k] = mc[i % 2].checkbox(label, key=f"mast_{k}")
+
+        if st.button("ম্যাস্টাইটিস যাচাই করুন", type="primary",
+                     use_container_width=True, key="mast_btn"):
+            st.session_state.mastitis = assess_mastitis(
+                None if cmt == "পরীক্ষা করিনি" else cmt, mast_checked
+            )
+
+    if st.session_state.get("mastitis"):
+        r = st.session_state.mastitis
+        section("🥛", "ম্যাস্টাইটিস যাচাইয়ের ফল")
+        box = {"severe": st.error, "clinical": st.error,
+               "subclinical": st.warning, "watch": st.info, "ok": st.success}[r["level"]]
+        icon = {"severe": "🚨", "clinical": "⚠️", "subclinical": "⚠️",
+                "watch": "ℹ️", "ok": "✅"}[r["level"]]
+        box(f"### {r['title']}\n\n{r['message']}", icon=icon)
+        if r["show_treatment"]:
+            show_medicines(MASTITIS_TREATMENT, heading="ম্যাস্টাইটিসে করণীয়")
+            st.warning(MILK_WITHHOLD, icon="🥛")
 
 # ---- ছাগল/ভেড়া: CCPP / Enterotoxaemia / Orf ----
 # এগুলোর কোনো উন্মুক্ত ডেটাসেট নেই, তাই ভুয়া ডেটায় মডেল না বানিয়ে
